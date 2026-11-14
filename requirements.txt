@@ -1,134 +1,309 @@
-# Block Notes x Reminder
+import json
+import os
+from datetime import datetime
+from pathlib import Path
+import tkinter as tk
+from tkinter import messagebox, ttk
 
-Un’app desktop per prendere appunti, organizzare note e impostare reminder direttamente sulle note, con un’esperienza semplice, leggera e portabile su Windows e Linux.
+APP_TITLE = "Block Notes x Reminder"
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "data"
+DATA_FILE = DATA_DIR / "notes.json"
 
-## Funzionalità principali
 
-- Creazione e modifica di note testuali
-- Salvataggio automatico delle note su file locale
-- Elenco delle note con titoli e data di aggiornamento
-- Impostazione di un reminder su ciascuna nota
-- Avviso visivo quando il reminder scatta
-- Compatibilità con Windows e Linux
-- Nessuna dipendenza pesante: base costruita con Python e Tkinter
+class NotesManager:
+    def __init__(self, file_path: Path):
+        self.file_path = file_path
+        self.notes = []
+        self.load()
 
-## Idea di prodotto
+    def load(self):
+        if not self.file_path.exists():
+            self.notes = []
+            return
 
-L’app permette di lavorare come una mini “cassetta di appunti” personale, in cui le note possono essere usate sia come semplice blocco di testo sia come promemoria. Una nota già scritta può essere trasformata in un reminder, senza dover creare un sistema complesso o esterno.
+        try:
+            with self.file_path.open("r", encoding="utf-8") as file:
+                data = json.load(file)
+                if isinstance(data, list):
+                    self.notes = data
+                else:
+                    self.notes = []
+        except (json.JSONDecodeError, OSError):
+            self.notes = []
 
-Esempio di uso:
+    def save(self):
+        self.file_path.parent.mkdir(parents=True, exist_ok=True)
+        with self.file_path.open("w", encoding="utf-8") as file:
+            json.dump(self.notes, file, ensure_ascii=False, indent=2)
 
-- Apri la nota
-- Fai click destro sulla nota dall’elenco
-- Seleziona “Imposta reminder”
-- Inserisci data e ora
-- Quando arriva il momento, la nota ti avvisa
+    def add_note(self, title="Nuova nota", content=""):
+        note = {
+            "id": self._next_id(),
+            "title": title or "Nuova nota",
+            "content": content,
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+            "reminder": None,
+        }
+        self.notes.insert(0, note)
+        self.save()
+        return note
 
-## Struttura del progetto
+    def update_note(self, note_id, title, content):
+        note = self.get_note(note_id)
+        if note is None:
+            return None
 
-- `main.py`: applicazione principale
-- `data/`: cartella dove vengono salvate le note in formato JSON
-- `README.md`: documentazione del progetto
-- `.gitignore`: file di esclusione
-- `requirements.txt`: dipendenze del progetto
+        note["title"] = title or "Senza titolo"
+        note["content"] = content
+        note["updated_at"] = datetime.now().isoformat(timespec="seconds")
+        self.save()
+        return note
 
-## Requisiti
+    def delete_note(self, note_id):
+        self.notes = [note for note in self.notes if note["id"] != note_id]
+        self.save()
 
-### Windows
+    def get_note(self, note_id):
+        for note in self.notes:
+            if note["id"] == note_id:
+                return note
+        return None
 
-- Python 3.10+ o superiore
-- Tkinter incluso in installazione standard di Python
+    def set_reminder(self, note_id, reminder_iso):
+        note = self.get_note(note_id)
+        if note is None:
+            return None
 
-### Linux
+        note["reminder"] = {
+            "datetime": reminder_iso,
+            "notified": False,
+        }
+        self.save()
+        return note
 
-- Python 3.10+ o superiore
-- Pacchetto `python3-tk`
+    def clear_reminder(self, note_id):
+        note = self.get_note(note_id)
+        if note is None:
+            return None
 
-Esempio su Ubuntu/Debian:
+        note["reminder"] = None
+        self.save()
+        return note
 
-```bash
-sudo apt update
-sudo apt install python3 python3-tk
-```
+    def _next_id(self):
+        if not self.notes:
+            return 1
+        return max(note["id"] for note in self.notes) + 1
 
-## Installazione
 
-1. Clona la repository:
+class ReminderDialog(tk.Toplevel):
+    def __init__(self, parent, callback):
+        super().__init__(parent)
+        self.title("Imposta reminder")
+        self.geometry("360x220")
+        self.transient(parent)
+        self.grab_set()
+        self.callback = callback
 
-```bash
-git clone https://github.com/Blingutufdu37373/block-notes-x-reminder.git
-cd block-notes-x-reminder
-```
+        tk.Label(self, text="Data (YYYY-MM-DD)", anchor="w").pack(fill="x", padx=18, pady=(16, 4))
+        self.date_var = tk.StringVar(value=datetime.now().strftime("%Y-%m-%d"))
+        ttk.Entry(self, textvariable=self.date_var).pack(fill="x", padx=18)
 
-2. Crea un ambiente virtuale (opzionale ma consigliato):
+        tk.Label(self, text="Ora (HH:MM)", anchor="w").pack(fill="x", padx=18, pady=(12, 4))
+        self.time_var = tk.StringVar(value=datetime.now().strftime("%H:%M"))
+        ttk.Entry(self, textvariable=self.time_var).pack(fill="x", padx=18)
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-```
+        ttk.Button(self, text="Conferma", command=self.confirm).pack(pady=(18, 8))
 
-Su Windows PowerShell:
+    def confirm(self):
+        try:
+            date_text = self.date_var.get().strip()
+            time_text = self.time_var.get().strip()
+            reminder_dt = datetime.strptime(f"{date_text} {time_text}", "%Y-%m-%d %H:%M")
+            self.callback(reminder_dt.isoformat(timespec="seconds"))
+            self.destroy()
+        except ValueError:
+            messagebox.showerror("Errore", "Inserisci una data e un orario validi, ad esempio 2026-11-20 e 18:30.")
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
 
-3. Installa le dipendenze:
+class BlockNotesApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title(APP_TITLE)
+        self.geometry("980x640")
+        self.minsize(820, 520)
 
-```bash
-pip install -r requirements.txt
-```
+        self.manager = NotesManager(DATA_FILE)
+        self.current_note_id = None
 
-4. Avvia l’app:
+        self._build_ui()
+        self.refresh_note_list()
+        self.after(1000, self.check_due_reminders)
 
-```bash
-python main.py
-```
+    def _build_ui(self):
+        main = ttk.Frame(self, padding=10)
+        main.pack(fill="both", expand=True)
 
-## Come usare le note con reminder
+        left = ttk.Frame(main)
+        left.pack(side="left", fill="y", padx=(0, 10))
 
-1. Crea una nuova nota o seleziona una nota esistente.
-2. Scrivi il contenuto della nota.
-3. Fai click destro sulla nota nell’elenco.
-4. Seleziona "Imposta reminder".
-5. Inserisci la data e l’ora.
-6. Quando il reminder scatta, l’app mostra un alert e ti avvisa che è arrivato il momento.
+        ttk.Button(left, text="Nuova nota", command=self.new_note).pack(fill="x", pady=(0, 8))
 
-Esempio pratico:
+        columns = ("id", "title")
+        self.note_tree = ttk.Treeview(left, columns=columns, show="headings", height=24)
+        self.note_tree.heading("id", text="ID")
+        self.note_tree.heading("title", text="Titolo")
+        self.note_tree.column("id", width=60, anchor="center")
+        self.note_tree.column("title", width=250)
+        self.note_tree.pack(fill="both", expand=True)
+        self.note_tree.bind("<<TreeviewSelect>>", self.on_note_selected)
+        self.note_tree.bind("<Button-3>", self.on_right_click)
 
-- Click destro sulla nota “Spesa”
-- Imposta reminder
-- Data: 2026-11-20
-- Ora: 18:30
-- La nota si attiva automaticamente al momento scelto
+        self.context_menu = tk.Menu(self, tearoff=0)
+        self.context_menu.add_command(label="Imposta reminder", command=self.open_reminder_dialog)
+        self.context_menu.add_command(label="Cancella reminder", command=self.clear_selected_reminder)
 
-## Note di sviluppo
+        right = ttk.Frame(main)
+        right.pack(side="left", fill="both", expand=True)
 
-Questo progetto è intenzionalmente semplice e leggibile, per essere un punto di partenza utile per evoluzioni future, come:
+        ttk.Label(right, text="Titolo").pack(anchor="w")
+        self.title_var = tk.StringVar()
+        ttk.Entry(right, textvariable=self.title_var).pack(fill="x", pady=(0, 12))
 
-- sincronizzazione cloud
-- ricerca note
-- categorie e tag
-- export in Markdown
-- notifiche native del sistema operativo
-- gestione multi-file
-- supporto per reminder ripetibili
+        self.content_text = tk.Text(right, wrap="word", font=("Segoe UI", 11), height=22)
+        self.content_text.pack(fill="both", expand=True)
 
-## Licenza
+        actions = ttk.Frame(right)
+        actions.pack(fill="x", pady=(12, 0))
+        ttk.Button(actions, text="Salva nota", command=self.save_current_note).pack(side="left", padx=(0, 8))
+        ttk.Button(actions, text="Elimina nota", command=self.delete_current_note).pack(side="left")
 
-Questo progetto è distribuito con licenza MIT. Vedi file `LICENSE` se presente o usa il repo come base per il tuo sviluppo personale.
+    def refresh_note_list(self):
+        for row in self.note_tree.get_children():
+            self.note_tree.delete(row)
 
-## Roadmap iniziale
+        for note in self.manager.notes:
+            title = note.get("title", "Senza titolo")
+            if note.get("reminder"):
+                title = f"{title} • reminder"
+            self.note_tree.insert("", "end", values=(note["id"], title), iid=str(note["id"]))
 
-- [x] Creazione app a blocchi note
-- [x] Salvataggio locale delle note
-- [x] Reminder per singola nota
-- [x] Supporto Windows/Linux
-- [ ] Notifiche native del sistema
-- [ ] Ricerca avanzata
-- [ ] Sincronizzazione e backup
+        if self.current_note_id is not None and self.note_tree.exists(str(self.current_note_id)):
+            self.note_tree.selection_set(str(self.current_note_id))
+            self.note_tree.focus(str(self.current_note_id))
 
-## Sviluppo futuro
+    def on_note_selected(self, event=None):
+        selected = self.note_tree.selection()
+        if not selected:
+            return
 
-Il progetto può evolvere in una vera app di note con modello “Obsidian-like”, aggiungendo archiviazione efficiente, tag, note collegate, ricerca e reminder avanzati.
+        note_id = int(selected[0])
+        self.current_note_id = note_id
+        note = self.manager.get_note(note_id)
+        if note is None:
+            return
+
+        self.title_var.set(note.get("title", ""))
+        self.content_text.delete("1.0", tk.END)
+        self.content_text.insert("1.0", note.get("content", ""))
+
+    def new_note(self):
+        note = self.manager.add_note(title="Nuova nota", content="")
+        self.current_note_id = note["id"]
+        self.refresh_note_list()
+        self.on_note_selected()
+
+    def save_current_note(self):
+        if self.current_note_id is None:
+            messagebox.showwarning("Attenzione", "Seleziona una nota prima di salvarla.")
+            return
+
+        note = self.manager.update_note(
+            self.current_note_id,
+            self.title_var.get(),
+            self.content_text.get("1.0", tk.END).rstrip("\n"),
+        )
+
+        if note is not None:
+            self.refresh_note_list()
+            messagebox.showinfo("Salvato", f"Nota '{note['title']}' salvata correttamente.")
+
+    def delete_current_note(self):
+        if self.current_note_id is None:
+            messagebox.showwarning("Attenzione", "Seleziona una nota da eliminare.")
+            return
+
+        confirm = messagebox.askyesno("Conferma", "Eliminare la nota selezionata?")
+        if not confirm:
+            return
+
+        self.manager.delete_note(self.current_note_id)
+        self.current_note_id = None
+        self.title_var.set("")
+        self.content_text.delete("1.0", tk.END)
+        self.refresh_note_list()
+
+    def on_right_click(self, event):
+        item = self.note_tree.identify_row(event.y)
+        if not item:
+            return
+
+        self.note_tree.selection_set(item)
+        self.current_note_id = int(item)
+        self.on_note_selected()
+        self.context_menu.post(event.x_root, event.y_root)
+
+    def open_reminder_dialog(self):
+        if self.current_note_id is None:
+            return
+
+        dialog = ReminderDialog(self, self.set_selected_reminder)
+        dialog.focus_set()
+
+    def set_selected_reminder(self, reminder_iso):
+        if self.current_note_id is None:
+            return
+
+        note = self.manager.set_reminder(self.current_note_id, reminder_iso)
+        if note is not None:
+            self.refresh_note_list()
+            reminder_dt = datetime.fromisoformat(reminder_iso)
+            messagebox.showinfo("Reminder impostato", f"Reminder impostato per {reminder_dt.strftime('%d/%m/%Y %H:%M')}")
+
+    def clear_selected_reminder(self):
+        if self.current_note_id is None:
+            return
+
+        self.manager.clear_reminder(self.current_note_id)
+        self.refresh_note_list()
+        messagebox.showinfo("Reminder", "Reminder cancellato.")
+
+    def check_due_reminders(self):
+        now = datetime.now()
+        triggered = False
+
+        for note in self.manager.notes:
+            reminder = note.get("reminder")
+            if not reminder or not reminder.get("datetime"):
+                continue
+
+            reminder_dt = datetime.fromisoformat(reminder["datetime"])
+            if reminder_dt <= now and not reminder.get("notified"):
+                reminder["notified"] = True
+                title = note.get("title") or "Nota"
+                body = note.get("content") or "Nessun contenuto"
+                messagebox.showinfo("Reminder attivo", f"Nota: {title}\n\n{body[:800]}")
+                triggered = True
+
+        if triggered:
+            self.manager.save()
+            self.refresh_note_list()
+
+        self.after(1000, self.check_due_reminders)
+
+
+if __name__ == "__main__":
+    app = BlockNotesApp()
+    app.mainloop()
