@@ -1,0 +1,491 @@
+import json
+import os
+import tkinter as tk
+from datetime import datetime
+from pathlib import Path
+from tkinter import messagebox, ttk
+
+APP_TITLE = "Block Notes x Reminder"
+DATA_DIR = Path(__file__).resolve().parent / "data"
+DATA_FILE = DATA_DIR / "notes.json"
+
+
+class NotesManager:
+    def __init__(self, data_file: Path):
+        self.data_file = data_file
+        self.notes = []
+        self.load()
+
+    def load(self):
+        if not self.data_file.exists():
+            self.notes = []
+            return
+
+        try:
+            with self.data_file.open("r", encoding="utf-8") as file:
+                data = json.load(file)
+                self.notes = data if isinstance(data, list) else []
+        except (json.JSONDecodeError, OSError):
+            self.notes = []
+
+    def save(self):
+        self.data_file.parent.mkdir(parents=True, exist_ok=True)
+        with self.data_file.open("w", encoding="utf-8") as file:
+            json.dump(self.notes, file, ensure_ascii=False, indent=2)
+
+    def add_note(self, title: str = "Nuova nota", content: str = ""):
+        note = {
+            "id": self._next_id(),
+            "title": title,
+            "content": content,
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+            "reminder": None,
+        }
+        self.notes.insert(0, note)
+        self.save()
+        return note
+
+    def update_note(self, note_id: int, title: str, content: str):
+        for note in self.notes:
+            if note["id"] == note_id:
+                note["title"] = title or "Senza titolo"
+                note["content"] = content
+                note["updated_at"] = datetime.now().isoformat(timespec="seconds")
+                self.save()
+                return note
+        return None
+
+    def delete_note(self, note_id: int):
+        self.notes = [note for note in self.notes if note["id"] != note_id]
+        self.save()
+
+    def get_note(self, note_id: int):
+        for note in self.notes:
+            if note["id"] == note_id:
+                return note
+        return None
+
+    def set_reminder(self, note_id: int, reminder_iso: str):
+        note = self.get_note(note_id)
+        if note is None:
+            return None
+        note["reminder"] = {
+            "datetime": reminder_iso,
+            "notified": False,
+        }
+        self.save()
+        return note
+
+    def clear_reminder(self, note_id: int):
+        note = self.get_note(note_id)
+        if note is None:
+            return
+        note["reminder"] = None
+        self.save()
+
+    def _next_id(self):
+        if not self.notes:
+            return 1
+        return max(note["id"] for note in self.notes) + 1
+
+
+class BlockNotesApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title(APP_TITLE)
+        self.geometry("980x640")
+        self.minsize(820, 500)
+
+        self.manager = NotesManager(DATA_FILE)
+        self.current_note_id = None
+
+        self._build_layout()
+        self.refresh_note_list()
+        self.after(1000, self.check_due_reminders)
+
+    def _build_layout(self):
+        container = ttk.Frame(self, padding=10)
+        container.pack(fill="both", expand=True)
+
+        left_panel = ttk.Frame(container)
+        left_panel.pack(side="left", fill="y", padx=(0, 10))
+
+        self.new_note_button = ttk.Button(left_panel, text="Nuova nota", command=self.new_note)
+        self.new_note_button.pack(fill="x", pady=(0, 8))
+
+        self.note_tree = ttk.Treeview(left_panel, columns=("id", "title"), show="headings", height=24)
+        self.note_tree.heading("id", text="ID")
+        self.note_tree.heading("title", text="Titolo")
+        self.note_tree.column("id", width=60, anchor="center")
+        self.note_tree.column("title", width=260)
+        self.note_tree.pack(fill="both", expand=True)
+
+        self.note_tree.bind("<<TreeviewSelect>>", self.on_note_selected)
+        self.note_tree.bind("<Button-3>", self.on_right_click)
+
+        self.context_menu = tk.Menu(self, tearoff=0)
+        self.context_menu.add_command(label="Imposta reminder", command=self.set_note_reminder)
+        self.context_menu.add_command(label="Cancella reminder", command=self.clear_selected_reminder)
+
+        right_panel = ttk.Frame(container)
+        right_panel.pack(side="left", fill="both", expand=True)
+
+        title_label = ttk.Label(right_panel, text="Titolo")
+        title_label.pack(anchor="w")
+
+        self.title_var = tk.StringVar()
+        self.title_entry = ttk.Entry(right_panel, textvariable=self.title_var)
+        self.title_entry.pack(fill="x", pady=(0, 12))
+
+        self.content_text = tk.Text(right_panel, wrap="word", font=("Segoe UI", 11), height=20)
+        self.content_text.pack(fill="both", expand=True)
+
+        actions = ttk.Frame(right_panel)
+        actions.pack(fill="x", pady=(12, 0))
+
+        ttk.Button(actions, text="Salva nota", command=self.save_current_note).pack(side="left", padx=(0, 8))
+        ttk.Button(actions, text="Elimina nota", command=self.delete_current_note).pack(side="left")
+
+    def refresh_note_list(self):
+        for item in self.note_tree.get_children():
+            self.note_tree.delete(item)
+
+        for note in self.manager.notes:
+            title_text = note["title"]
+            reminder_text = ""
+            if note.get("reminder") and note["reminder"].get("datetime"):
+                reminder_text = " • reminder"
+            self.note_tree.insert(
+                "",
+                "end",
+                values=(note["id"], title_text + reminder_text),
+                iid=str(note["id"]),
+            )
+
+        if self.current_note_id is not None:
+            if self.note_tree.exists(str(self.current_note_id)):
+                self.note_tree.selection_set(str(self.current_note_id))
+                self.note_tree.focus(str(self.current_note_id))
+
+    def on_note_selected(self, event=None):
+        selected = self.note_tree.selection()
+        if not selected:
+            return
+        note_id = int(selected[0])
+        self.current_note_id = note_id
+        note = self.manager.get_note(note_id)
+        if note is None:
+            return
+        self.title_var.set(note["title"])
+        self.content_text.delete("1.0", tk.END)
+        self.content_text.insert("1.0", note["content"])
+
+    def new_note(self):
+        note = self.manager.add_note(title="Nuova nota", content="")
+        self.current_note_id = note["id"]
+        self.refresh_note_list()
+        self.on_note_selected()
+
+    def save_current_note(self):
+        if self.current_note_id is None:
+            messagebox.showwarning("Attenzione", "Seleziona una nota prima di salvare.")
+            return
+
+        note = self.manager.update_note(
+            self.current_note_id,
+            self.title_var.get(),
+            self.content_text.get("1.0", tk.END).rstrip("\n"),
+        )
+        if note is not None:
+            self.refresh_note_list()
+            messagebox.showinfo("Salvato", f"Nota '{note['title']}' salvata correttamente.")
+
+    def delete_current_note(self):
+        if self.current_note_id is None:
+            messagebox.showwarning("Attenzione", "Seleziona una nota da eliminare.")
+            return
+
+        confirm = messagebox.askyesno("Conferma", "Eliminare la nota selezionata?")
+        if confirm:
+            self.manager.delete_note(self.current_note_id)
+            self.current_note_id = None
+            self.title_var.set("")
+            self.content_text.delete("1.0", tk.END)
+            self.refresh_note_list()
+
+    def on_right_click(self, event):
+        item = self.note_tree.identify_row(event.y)
+        if item:
+            self.note_tree.selection_set(item)
+            self.current_note_id = int(item)
+            self.on_note_selected()
+            self.context_menu.post(event.x_root, event.y_root)
+
+    def set_note_reminder(self):
+        if self.current_note_id is None:
+            return
+
+        reminder_window = tk.Toplevel(self)
+        reminder_window.title("Imposta reminder")
+        reminder_window.geometry("320x180")
+        reminder_window.transient(self)
+        reminder_window.grab_set()
+
+        tk.Label(reminder_window, text="Data (YYYY-MM-DD)").pack(anchor="w", padx=16, pady=(12, 4))
+        date_var = tk.StringVar(value=datetime.now().strftime("%Y-%m-%d"))
+        date_entry = ttk.Entry(reminder_window, textvariable=date_var)
+        date_entry.pack(fill="x", padx=16)
+
+        tk.Label(reminder_window, text="Ora (HH:MM)").pack(anchor="w", padx=16, pady=(10, 4))
+        time_var = tk.StringVar(value=datetime.now().strftime("%H:%M"))
+        time_entry = ttk.Entry(reminder_window, textvariable=time_var)
+        time_entry.pack(fill="x", padx=16)
+
+        def confirm():
+            try:
+                reminder_dt = datetime.strptime(f"{date_var.get()} {time_var.get()}", "%Y-%m-%d %H:%M")
+                iso_value = reminder_dt.isoformat(timespec="seconds")
+                self.manager.set_reminder(self.current_note_id, iso_value)
+                self.refresh_note_list()
+                messagebox.showinfo("Reminder impostato", f"Reminder impostato per {reminder_dt.strftime('%d/%m/%Y %H:%M')}")
+                reminder_window.destroy()
+            except ValueError:
+                messagebox.showerror("Errore", "Inserisci una data e un orario validi, ad esempio 2026-11-20 e 18:30.")
+
+        ttk.Button(reminder_window, text="Conferma", command=confirm).pack(pady=16)
+
+    def clear_selected_reminder(self):
+        if self.current_note_id is None:
+            return
+        self.manager.clear_reminder(self.current_note_id)
+        self.refresh_note_list()
+        messagebox.showinfo("Reminder", "Reminder cancellato.")
+
+    def check_due_reminders(self):
+        now = datetime.now()
+        changed = False
+
+        for note in self.manager.notes:
+            reminder = note.get("reminder")
+            if not reminder or not reminder.get("datetime"):
+                continue
+
+            reminder_dt = datetime.fromisoformat(reminder["datetime"])
+            if reminder_dt <= now and not reminder.get("notified"):
+                reminder["notified"] = True
+                title = note.get("title") or "Nota"
+                content = note.get("content") or "Nessun testo"
+                try:
+                    os.system('')
+                except Exception:
+                    pass
+
+                messagebox.showinfo("Reminder attivo", f"Nota: {title}\n\n{content[:500]}")
+                changed = True
+
+        if changed:
+            self.manager.save()
+            self.refresh_note_list()
+
+        self.after(1000, self.check_due_reminders)
+
+
+if __name__ == "__main__":
+    app = BlockNotesApp()
+    app.mainloop()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

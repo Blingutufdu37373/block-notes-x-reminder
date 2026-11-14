@@ -1,0 +1,134 @@
+# Block Notes x Reminder
+
+Un’app desktop per prendere appunti, organizzare note e impostare reminder direttamente sulle note, con un’esperienza semplice, leggera e portabile su Windows e Linux.
+
+## Funzionalità principali
+
+- Creazione e modifica di note testuali
+- Salvataggio automatico delle note su file locale
+- Elenco delle note con titoli e data di aggiornamento
+- Impostazione di un reminder su ciascuna nota
+- Avviso visivo quando il reminder scatta
+- Compatibilità con Windows e Linux
+- Nessuna dipendenza pesante: base costruita con Python e Tkinter
+
+## Idea di prodotto
+
+L’app permette di lavorare come una mini “cassetta di appunti” personale, in cui le note possono essere usate sia come semplice blocco di testo sia come promemoria. Una nota già scritta può essere trasformata in un reminder, senza dover creare un sistema complesso o esterno.
+
+Esempio di uso:
+
+- Apri la nota
+- Fai click destro sulla nota dall’elenco
+- Seleziona “Imposta reminder”
+- Inserisci data e ora
+- Quando arriva il momento, la nota ti avvisa
+
+## Struttura del progetto
+
+- `main.py`: applicazione principale
+- `data/`: cartella dove vengono salvate le note in formato JSON
+- `README.md`: documentazione del progetto
+- `.gitignore`: file di esclusione
+- `requirements.txt`: dipendenze del progetto
+
+## Requisiti
+
+### Windows
+
+- Python 3.10+ o superiore
+- Tkinter incluso in installazione standard di Python
+
+### Linux
+
+- Python 3.10+ o superiore
+- Pacchetto `python3-tk`
+
+Esempio su Ubuntu/Debian:
+
+```bash
+sudo apt update
+sudo apt install python3 python3-tk
+```
+
+## Installazione
+
+1. Clona la repository:
+
+```bash
+git clone https://github.com/Blingutufdu37373/block-notes-x-reminder.git
+cd block-notes-x-reminder
+```
+
+2. Crea un ambiente virtuale (opzionale ma consigliato):
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+Su Windows PowerShell:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+3. Installa le dipendenze:
+
+```bash
+pip install -r requirements.txt
+```
+
+4. Avvia l’app:
+
+```bash
+python main.py
+```
+
+## Come usare le note con reminder
+
+1. Crea una nuova nota o seleziona una nota esistente.
+2. Scrivi il contenuto della nota.
+3. Fai click destro sulla nota nell’elenco.
+4. Seleziona "Imposta reminder".
+5. Inserisci la data e l’ora.
+6. Quando il reminder scatta, l’app mostra un alert e ti avvisa che è arrivato il momento.
+
+Esempio pratico:
+
+- Click destro sulla nota “Spesa”
+- Imposta reminder
+- Data: 2026-11-20
+- Ora: 18:30
+- La nota si attiva automaticamente al momento scelto
+
+## Note di sviluppo
+
+Questo progetto è intenzionalmente semplice e leggibile, per essere un punto di partenza utile per evoluzioni future, come:
+
+- sincronizzazione cloud
+- ricerca note
+- categorie e tag
+- export in Markdown
+- notifiche native del sistema operativo
+- gestione multi-file
+- supporto per reminder ripetibili
+
+## Licenza
+
+Questo progetto è distribuito con licenza MIT. Vedi file `LICENSE` se presente o usa il repo come base per il tuo sviluppo personale.
+
+## Roadmap iniziale
+
+- [x] Creazione app a blocchi note
+- [x] Salvataggio locale delle note
+- [x] Reminder per singola nota
+- [x] Supporto Windows/Linux
+- [ ] Notifiche native del sistema
+- [ ] Ricerca avanzata
+- [ ] Sincronizzazione e backup
+
+## Sviluppo futuro
+
+Il progetto può evolvere in una vera app di note con modello “Obsidian-like”, aggiungendo archiviazione efficiente, tag, note collegate, ricerca e reminder avanzati.
